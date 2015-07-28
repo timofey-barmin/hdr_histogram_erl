@@ -18,6 +18,7 @@
 #ifndef HDR_HISTOGRAM_H
 #define HDR_HISTOGRAM_H 1
 
+
 typedef struct hdr_histogram
 {
     int64_t lowest_trackable_value;
@@ -30,8 +31,8 @@ typedef struct hdr_histogram
     int32_t sub_bucket_count;
     int32_t bucket_count;
     int32_t counts_len;
-    int64_t total_count;
-    int64_t counts[0];
+    atomic_wide_t total_count;
+    atomic_wide_t counts[0];
 } hdr_histogram_t;
 
 /**

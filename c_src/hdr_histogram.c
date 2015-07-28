@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <inttypes.h>
 
+#include "hdr_histogram_atomic.h"
 #include "hdr_histogram.h"
 
 
@@ -78,7 +79,7 @@ static int64_t get_count_at_index(
         int32_t bucket_index,
         int32_t sub_bucket_index)
 {
-    return h->counts[counts_index(h, bucket_index, sub_bucket_index)];
+    return atomic_wide_get(h->counts + counts_index(h, bucket_index, sub_bucket_index));
 }
 
 static int64_t size_of_equivalent_value_range(struct hdr_histogram* h, int64_t value)
@@ -172,7 +173,7 @@ int hdr_init(
     histogram->sub_bucket_count                = sub_bucket_count;
     histogram->bucket_count                    = bucket_count;
     histogram->counts_len                      = counts_len;
-    histogram->total_count                     = 0;
+    histogram->total_count._atomic_val         = 0;
 
     *result = histogram;
 
@@ -188,9 +189,10 @@ int hdr_alloc(int64_t highest_trackable_value, int significant_figures, struct h
 // reset a histogram to zero.
 void hdr_reset(struct hdr_histogram *h)
 {
-     h->total_count=0;
-     memset((void *) &h->counts, 0, (sizeof(int64_t) * h->counts_len));
-     return;
+    // TODO: Not a thread safe function
+    h->total_count._atomic_val = 0;
+    memset((void *) &h->counts, 0, (sizeof(int64_t) * h->counts_len));
+    return;
 }
 
 size_t hdr_get_memory_size(struct hdr_histogram *h)
@@ -216,9 +218,8 @@ bool hdr_record_value(struct hdr_histogram* h, int64_t value)
     {
         return false;
     }
-
-    h->counts[counts_index]++;
-    h->total_count++;
+    atomic_add(h->counts + counts_index, 1);
+    atomic_add(&h->total_count, 1);
 
     return true;
 }
@@ -232,8 +233,8 @@ bool hdr_record_values(struct hdr_histogram* h, int64_t value, int64_t count)
         return false;
     }
 
-    h->counts[counts_index] += count;
-    h->total_count += count;
+    atomic_add(h->counts + counts_index, count);
+    atomic_add(&h->total_count, count);
 
     return true;
 }
@@ -335,7 +336,7 @@ int64_t hdr_value_at_percentile(struct hdr_histogram* h, double percentile)
 
     double requested_percentile = percentile < 100.0 ? percentile : 100.0;
     int64_t count_at_percentile =
-        (int64_t) (((requested_percentile / 100) * h->total_count) + 0.5);
+        (int64_t) (((requested_percentile / 100) * atomic_wide_get(&h->total_count)) + 0.5);
     count_at_percentile = count_at_percentile > 1 ? count_at_percentile : 1;
     int64_t total = 0;
 
@@ -368,7 +369,7 @@ double hdr_mean(struct hdr_histogram* h)
         }
     }
 
-    return (total * 1.0) / h->total_count;
+    return (total * 1.0) / atomic_wide_get(&h->total_count);
 }
 
 double hdr_stddev(struct hdr_histogram* h)
@@ -388,7 +389,7 @@ double hdr_stddev(struct hdr_histogram* h)
         }
     }
 
-    return sqrt(geometric_dev_total / h->total_count);
+    return sqrt(geometric_dev_total / atomic_wide_get(&h->total_count));
 }
 
 bool hdr_values_are_equivalent(struct hdr_histogram* h, int64_t a, int64_t b)
@@ -403,7 +404,7 @@ int64_t hdr_lowest_equivalent_value(struct hdr_histogram* h, int64_t value)
 
 int64_t hdr_count_at_value(struct hdr_histogram* h, int64_t value)
 {
-    return h->counts[counts_index_for(h, value)];
+    return atomic_wide_get(h->counts + counts_index_for(h, value));
 }
 
 
@@ -423,7 +424,7 @@ static bool has_buckets(struct hdr_iter* iter)
 
 static bool has_next(struct hdr_iter* iter)
 {
-    return iter->count_to_index < iter->h->total_count;
+    return iter->count_to_index < atomic_wide_get(&iter->h->total_count);
 }
 
 static void increment_bucket(struct hdr_histogram* h, int32_t* bucket_index, int32_t* sub_bucket_index)
@@ -533,7 +534,7 @@ bool hdr_percentile_iter_next(struct hdr_percentile_iter* percentiles)
 
     do
     {
-        double current_percentile = (100.0 * (double) percentiles->iter.count_to_index) / percentiles->iter.h->total_count;
+        double current_percentile = (100.0 * (double) percentiles->iter.count_to_index) / atomic_wide_get(&percentiles->iter.h->total_count);
         if (percentiles->iter.count_at_index != 0 &&
             percentiles->percentile_to_iterate_to <= current_percentile)
         {
@@ -629,7 +630,7 @@ int hdr_percentiles_print(
 
         if (fprintf(
             stream, CLASSIC_FOOTER,  mean, stddev, max,
-            h->total_count, h->bucket_count, h->sub_bucket_count) < 0)
+            atomic_wide_get(&h->total_count), h->bucket_count, h->sub_bucket_count) < 0)
         {
             rc = EIO;
             goto cleanup;

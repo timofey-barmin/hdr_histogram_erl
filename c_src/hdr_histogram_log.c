@@ -17,6 +17,7 @@
 #include <math.h>
 #include <time.h>
 
+#include "hdr_histogram_atomic.h"
 #include "hdr_histogram.h"
 #include "hdr_histogram_log.h"
 
@@ -374,7 +375,7 @@ int hdr_encode_compressed(
     encode_fw.significant_figures     = htobe32(h->significant_figures);
     encode_fw.lowest_trackable_value  = htobe64(h->lowest_trackable_value);
     encode_fw.highest_trackable_value = htobe64(h->highest_trackable_value);
-    encode_fw.total_count             = htobe64(h->total_count);
+    encode_fw.total_count             = htobe64(atomic_wide_get(&h->total_count));
 
     int counts_index = 0;
 
@@ -416,7 +417,7 @@ int hdr_encode_compressed(
         int i = 0;
         while (i < counts_per_chunk && counts_index < h->counts_len)
         {
-            chunk[i++] = htobe64(h->counts[counts_index++]);
+            chunk[i++] = htobe64(atomic_wide_get(h->counts + counts_index++));
         }
 
         strm.next_in = (Bytef*) chunk;
@@ -466,8 +467,6 @@ int hdr_decode_compressed(
     z_stream strm;
     strm_init(&strm);
 
-    int64_t counts_tally = 0;
-
     if (length < sizeof(_compression_flyweight))
     {
         FAIL_AND_CLEANUP(cleanup, result, EINVAL);
@@ -516,7 +515,7 @@ int hdr_decode_compressed(
         FAIL_AND_CLEANUP(cleanup, result, ENOMEM);
     }
 
-    h->total_count = be64toh(encoding_flyweight.total_count);
+    h->total_count._atomic_val = be64toh(encoding_flyweight.total_count);
 
     int counts_index = 0;
     int available_counts = 0;
@@ -536,8 +535,7 @@ int hdr_decode_compressed(
         available_counts = counts_per_chunk - (strm.avail_out / sizeof(int64_t));
         for (int i = 0; i < available_counts && counts_index < h->counts_len; i++)
         {
-            h->counts[counts_index++] = be64toh(counts_array[i]);
-            counts_tally += h->counts[counts_index - 1];
+            h->counts[counts_index++]._atomic_val = be64toh(counts_array[i]);
         }
     }
     while (r == Z_OK);
@@ -906,12 +904,12 @@ int hdr_encode_uncompressed(
     encode_fw->significant_figures     = htobe32(h->significant_figures);
     encode_fw->lowest_trackable_value  = htobe64(h->lowest_trackable_value);
     encode_fw->highest_trackable_value = htobe64(h->highest_trackable_value);
-    encode_fw->total_count             = htobe64(h->total_count);
+    encode_fw->total_count             = htobe64(atomic_wide_get(&h->total_count));
 
 
     for (int i = 0; i < h->counts_len; i++)
     {
-      encode_fw->counts[i] = htobe64(h->counts[i]);
+      encode_fw->counts[i] = htobe64(atomic_wide_get(h->counts + i));
     }
 
     comp_fw->length = htobe32(sizeof(_encoding_flyweight) + sizeof(int64_t) * h->counts_len);
@@ -1001,7 +999,7 @@ int hdr_decode_uncompressed(
         FAIL_AND_CLEANUP(cleanup, result, ENOMEM);
     }
 
-    h->total_count = be64toh(encode_fw->total_count);
+    h->total_count._atomic_val = be64toh(encode_fw->total_count);
 
     count = be32toh(comp_fw->length);
     count = count - sizeof(_encoding_flyweight);
@@ -1009,7 +1007,7 @@ int hdr_decode_uncompressed(
 
     for (int i = 0; i < count; i++)
       {
-        h->counts[i] = be64toh(encode_fw->counts[i]);
+        h->counts[i]._atomic_val = be64toh(encode_fw->counts[i]);
       }
 cleanup:
 

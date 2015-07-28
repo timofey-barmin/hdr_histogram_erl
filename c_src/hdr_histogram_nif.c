@@ -79,6 +79,7 @@
 #include <errno.h>
 
 #include "erl_nif.h"
+#include "hdr_histogram_atomic.h"
 #include "hdr_histogram.h"
 #include "hdr_histogram_log.h"
 
@@ -230,7 +231,7 @@ ERL_NIF_TERM _hh_get_total_count(ErlNifEnv* env, int argc, const ERL_NIF_TERM ar
    
     if (ctx != NULL)
     {
-        return enif_make_ulong(env,ctx->data->total_count);
+        return enif_make_ulong(env,atomic_wide_get(&ctx->data->total_count));
     }
 
     return make_error(env, "bad_hdr_histogram_nif_impl");
@@ -381,7 +382,7 @@ ERL_NIF_TERM _hh_max(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
    
     if (ctx != NULL)
     {
-        if (ctx->data->total_count == 0)
+        if (atomic_wide_get(&ctx->data->total_count) == 0)
         {
             return enif_make_long(env, 0);
         }
@@ -409,7 +410,7 @@ ERL_NIF_TERM _hh_mean(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
   
     if (ctx != NULL)
     {
-        if (ctx->data->total_count == 0)
+        if (atomic_wide_get(&ctx->data->total_count) == 0)
         {
             return enif_make_double(env, 0.);
         }
@@ -443,7 +444,7 @@ ERL_NIF_TERM _hh_median(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
    
     if (ctx != NULL)
     {
-        if (ctx->data->total_count == 0)
+        if (atomic_wide_get(&ctx->data->total_count) == 0)
         {
             return enif_make_double(env, 0.0);
         }
@@ -477,7 +478,7 @@ ERL_NIF_TERM _hh_stddev(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
     if (ctx != NULL)
     {
-        if (ctx->data->total_count == 0)
+        if (atomic_wide_get(&ctx->data->total_count) == 0)
         {
             return enif_make_double(env, 0.);
         }
@@ -513,7 +514,7 @@ ERL_NIF_TERM _hh_percentile(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
    
     if (ctx != NULL)
     {
-        if (ctx->data->total_count == 0)
+        if (atomic_wide_get(&ctx->data->total_count) == 0)
         {
             return enif_make_double(env, 0.);
         }

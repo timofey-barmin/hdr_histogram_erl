@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <sys/time.h>
 
+#include "hdr_histogram_atomic.h"
 #include "hdr_histogram.h"
 
 int main(int argc, char** argv)
