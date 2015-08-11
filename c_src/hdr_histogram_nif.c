@@ -120,7 +120,6 @@ typedef struct
     int64_t highest_trackable_value;
     int significant_figures;
     hdr_histogram_t* data;
-    ErlNifRWLock* lock;
 } hh_ctx_t;
 
 static inline ERL_NIF_TERM make_error(ErlNifEnv* env, const char* text)
@@ -191,7 +190,6 @@ ERL_NIF_TERM _hh_open(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
     ctx->data = raw_histogram; 
     ctx->highest_trackable_value = highest_trackable_value;
     ctx->significant_figures = significant_figures;
-    ctx->lock = erl_drv_rwlock_create("test");
 
     ERL_NIF_TERM result = enif_make_resource(env, ctx);
     enif_release_resource(ctx);
@@ -260,9 +258,7 @@ ERL_NIF_TERM _hh_record(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
     if (ctx != NULL && ctx-> data != NULL)
     {
-        erl_drv_rwlock_rlock(ctx->lock);
         hdr_record_value(ctx->data, value);
-        erl_drv_rwlock_runlock(ctx->lock);
     }
 
     return ATOM_OK;
@@ -291,9 +287,7 @@ ERL_NIF_TERM _hh_record_corrected(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
 
     if (ctx != NULL && ctx->data != NULL)
     {
-        erl_drv_rwlock_rlock(ctx->lock);
         hdr_record_corrected_value(ctx->data, value, expected_interval);
-        erl_drv_rwlock_runlock(ctx->lock);
     }
 
     return ATOM_OK;
@@ -322,9 +316,7 @@ ERL_NIF_TERM _hh_record_many(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[]
 
     if (ctx != NULL && ctx->data != NULL)
     {
-        erl_drv_rwlock_rlock(ctx->lock);
         hdr_record_values(ctx->data, value, count);
-        erl_drv_rwlock_runlock(ctx->lock);
     }
 
     return ATOM_OK;
@@ -739,9 +731,7 @@ ERL_NIF_TERM _hh_reset(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
 
     if (ctx != NULL)
     {
-        erl_drv_rwlock_rwlock(ctx->lock);
         hdr_reset(ctx->data);
-        erl_drv_rwlock_rwunlock(ctx->lock);
         return ATOM_OK;
     }
 
